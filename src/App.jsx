@@ -62,7 +62,7 @@ function Reveal() {
 
 function Wrapper({ children }) {
   const loc = useLocation();
-  return <div key={loc.pathname} className="page-enter">{children}</div>;
+  return <div key={loc.pathname} className="page-in">{children}</div>;
 }
 
 const BDAYS = [];

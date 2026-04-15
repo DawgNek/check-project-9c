@@ -73,7 +73,7 @@ export default function PwaPage({ onDismiss }) {
                 background: tab===t ? 'rgba(255,255,255,.10)' : 'transparent',
                 transition: 'all .3s',
               }}>
-                {t === 'ios' ? '🍎 iOS' : '🤖 Android'}
+                {t === 'ios' ? ' iOS' : ' Android'}
               </button>
             ))}
           </div>

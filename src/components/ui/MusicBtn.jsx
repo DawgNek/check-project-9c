@@ -78,7 +78,7 @@ export default function MusicBtn() {
   }, []);
 
   return (
-    <button id="music-btn" className={playing ? 'playing' : ''} onClick={toggle}
+    <button id="music-btn" className={playing ? 'on' : ''} onClick={toggle}
       title={playing ? 'Tắt nhạc' : 'Bật nhạc nền'}>
       {playing ? '🎵' : '🎶'}
     </button>

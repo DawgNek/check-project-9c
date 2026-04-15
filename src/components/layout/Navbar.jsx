@@ -1,51 +1,42 @@
-// src/components/layout/Navbar.jsx — Complete rewrite
+// Navbar.jsx — Clean, refined, no bugs
 import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { updateOnlineStatus, setOffline } from '../../lib/firestore';
 
-const DESK_LINKS = [
-  {to:'/',label:'Home'},{to:'/chung',label:'Chung'},{to:'/seating',label:'Sơ đồ'},
-  {to:'/profile',label:'Hồ sơ'},{to:'/locket',label:'Locket'},{to:'/chat',label:'Chat'},
-  {to:'/story',label:'Story'},{to:'/playlist',label:'Playlist'},
-  {to:'/signature',label:'Chữ ký'},{to:'/privacy',label:'Privacy'},
-  {to:'/terms',label:'Terms'},{to:'/credit',label:'Credit'},
+const DESK = [
+  ['/', 'Home'], ['/chung','Chung'], ['/seating','Sơ đồ'], ['/profile','Hồ sơ'],
+  ['/locket','Locket'], ['/chat','Chat'], ['/story','Story'],
+  ['/playlist','Playlist'], ['/signature','Chữ ký'],
+  ['/privacy','Privacy'], ['/terms','Terms'], ['/credit','Credit'],
 ];
-
-const BOT_MAIN = [
-  {to:'/',      label:'Home',  icon:'🏠'},
-  {to:'/chat',  label:'Chat',  icon:'💬'},
-  {to:'/locket',label:'Locket',icon:'📷'},
-  {to:'/story', label:'Story', icon:'✨'},
-  {to:'/profile',label:'Tôi', icon:'👤'},
+const BOT = [
+  ['/','Home','🏠'], ['/chat','Chat','💬'], ['/locket','Locket','📷'],
+  ['/story','Story','✨'], ['/profile','Tôi','👤'],
 ];
-
-const MORE_ITEMS = [
-  {to:'/chung',    label:'Chung',   icon:'💌'},
-  {to:'/seating',  label:'Sơ đồ',   icon:'🪑'},
-  {to:'/playlist', label:'Playlist',icon:'🎵'},
-  {to:'/signature',label:'Chữ ký',  icon:'✍️'},
-  {to:'/privacy',  label:'Privacy', icon:'📜'},
-  {to:'/terms',    label:'Terms',   icon:'📋'},
-  {to:'/credit',   label:'Credit',  icon:'👥'},
+const MORE = [
+  ['/chung','Chung','💌'], ['/seating','Sơ đồ','🪑'], ['/playlist','Playlist','🎵'],
+  ['/signature','Chữ ký','✍️'], ['/privacy','Privacy','📜'],
+  ['/terms','Terms','📋'], ['/credit','Credit','👥'],
 ];
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const [solid,   setSolid]   = useState(false);
-  const [ham,     setHam]     = useState(false);
-  const [more,    setMore]    = useState(false);
+  const navigate = useNavigate();
+  const loc = useLocation();
+  const [solid, setSolid] = useState(false);
+  const [ham,   setHam]   = useState(false);
+  const [more,  setMore]  = useState(false);
 
-  // Online heartbeat
+  // Online presence
   useEffect(() => {
     if (!user) return;
     const ping = () => updateOnlineStatus(user.uid, user.displayName || 'Ẩn danh').catch(() => {});
     ping();
     const iv = setInterval(ping, 30000);
-    window.addEventListener('beforeunload', () => setOffline(user.uid).catch(() => {}));
-    return () => clearInterval(iv);
+    const bye = () => setOffline(user.uid).catch(() => {});
+    window.addEventListener('beforeunload', bye);
+    return () => { clearInterval(iv); window.removeEventListener('beforeunload', bye); };
   }, [user]);
 
   useEffect(() => {
@@ -54,103 +45,100 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  // Close drawers on navigation
-  useEffect(() => { setHam(false); setMore(false); }, [location.pathname]);
+  // Close on navigate
+  useEffect(() => { setHam(false); setMore(false); }, [loc.pathname]);
 
-  const handleLogout = async () => {
+  const doLogout = async () => {
     try { await setOffline(user?.uid); } catch {}
-    await logout();
-    navigate('/login');
+    await logout(); navigate('/login');
   };
 
   const initial = (user?.displayName || user?.email || 'A')[0].toUpperCase();
 
   return (
     <>
-      {/* ── DESKTOP TOP NAV ──────────────────────── */}
+      {/* Desktop top nav */}
       <nav id="top-nav" className={solid ? 'solid' : ''}>
-        <NavLink to="/" className="nav-brand">9<em>C</em></NavLink>
+        <NavLink to="/" className="nav-logo">9<em>C</em></NavLink>
 
         <div className="nav-links">
-          {DESK_LINKS.map(({to,label}) => (
+          {DESK.map(([to, label]) => (
             <NavLink key={to} to={to} end={to === '/'}
-              className={({isActive}) => 'nav-a' + (isActive ? ' on' : '')}>
+              className={({ isActive }) => 'nav-a' + (isActive ? ' on' : '')}>
               {label}
             </NavLink>
           ))}
         </div>
 
         <div className="nav-end">
-          <NavLink to="/profile" className="nav-ava">{initial}</NavLink>
-          <button className="nav-logout" onClick={handleLogout}>Đăng xuất</button>
+          <NavLink to="/profile" className="nav-avatar">{initial}</NavLink>
+          <button className="nav-out" onClick={doLogout}>Đăng xuất</button>
         </div>
 
-        {/* Medium screen hamburger */}
         <button className="nav-ham" onClick={() => setHam(o => !o)} aria-label="Menu">
-          <span style={{transform: ham ? 'rotate(45deg) translate(4px,4px)' : 'none'}}/>
-          <span style={{opacity: ham ? 0 : 1}}/>
-          <span style={{transform: ham ? 'rotate(-45deg) translate(4px,-4px)' : 'none'}}/>
+          <span style={{ transform: ham ? 'rotate(45deg) translate(4.5px, 4.5px)' : 'none' }}/>
+          <span style={{ opacity: ham ? 0 : 1 }}/>
+          <span style={{ transform: ham ? 'rotate(-45deg) translate(4.5px,-4.5px)' : 'none' }}/>
         </button>
       </nav>
 
-      {/* Desk slide-down drawer */}
-      <div className={`desk-drawer ${ham ? 'on' : ''}`}>
-        {DESK_LINKS.map(({to,label}) => (
-          <NavLink key={to} to={to} end={to=='/'}
-            className={({isActive}) => isActive ? 'on' : ''}
+      {/* Medium-screen drawer */}
+      <div className={`nav-drawer ${ham ? 'on' : ''}`}>
+        {DESK.map(([to, label]) => (
+          <NavLink key={to} to={to} end={to === '/'}
+            className={({ isActive }) => 'nav-drawer-a' + (isActive ? ' on' : '')}
             onClick={() => setHam(false)}>
             {label}
           </NavLink>
         ))}
-        <div style={{padding:'14px 36px 4px', borderTop:'1px solid rgba(255,255,255,.08)', marginTop:8}}>
-          <button onClick={handleLogout}
-            style={{fontSize:13,color:'#ff6b6b',cursor:'pointer',background:'none',border:'none'}}>
+        <div style={{ padding:'14px 32px 0', borderTop:'1px solid rgba(255,255,255,.07)', marginTop:8 }}>
+          <button onClick={doLogout} style={{ fontFamily:"'Tenor Sans',sans-serif", fontSize:9.5, letterSpacing:'.18em', textTransform:'uppercase', color:'#FF6B6B', cursor:'pointer', background:'none', border:'none' }}>
             Đăng xuất
           </button>
         </div>
       </div>
 
-      {/* ── MOBILE BOTTOM NAV ────────────────────── */}
+      {/* Mobile bottom nav */}
       <nav id="bot-nav">
-        <div className="bot-items">
-          {BOT_MAIN.map(({to,label,icon}) => (
+        <div className="bot-row">
+          {BOT.map(([to, label, icon]) => (
             <NavLink key={to} to={to} end={to === '/'}
-              className={({isActive}) => 'bot-item' + (isActive ? ' on' : '')}>
-              <div className="bot-icon">
-                {icon}
-                <div className="bot-dot"/>
-              </div>
-              <span className="bot-label">{label}</span>
+              className={({ isActive }) => 'bot-btn' + (isActive ? ' on' : '')}>
+              <div className="bot-ico">{icon}<div className="bot-dot"/></div>
+              <span className="bot-lbl">{label}</span>
             </NavLink>
           ))}
-
-          {/* More button */}
-          <button className={`bot-item ${more ? 'on' : ''}`} onClick={() => setMore(o => !o)}>
-            <div className="bot-icon">
-              <span style={{fontSize:22, letterSpacing:1}}>⋯</span>
+          {/* More */}
+          <button className={`bot-btn${more ? ' on' : ''}`} onClick={() => setMore(o => !o)}>
+            <div className="bot-ico">
+              <svg width="22" height="6" viewBox="0 0 22 6" fill="none">
+                <circle cx="3" cy="3" r="2.5" fill="currentColor" opacity={more ? 1 : 0.55}/>
+                <circle cx="11" cy="3" r="2.5" fill="currentColor" opacity={more ? 1 : 0.55}/>
+                <circle cx="19" cy="3" r="2.5" fill="currentColor" opacity={more ? 1 : 0.55}/>
+              </svg>
               <div className="bot-dot"/>
             </div>
-            <span className="bot-label">Thêm</span>
+            <span className="bot-lbl">Thêm</span>
           </button>
         </div>
       </nav>
 
-      {/* More backdrop */}
-      <div id="more-back" className={more ? 'on' : ''} onClick={() => setMore(false)}/>
+      {/* Backdrop */}
+      <div id="more-scrim" className={more ? 'on' : ''} onClick={() => setMore(false)}/>
 
-      {/* More drawer */}
-      <div id="more-drawer" className={more ? 'on' : ''}>
-        <div className="more-handle"/>
-        <div className="more-grid">
-          {MORE_ITEMS.map(({to,label,icon}) => (
-            <NavLink key={to} to={to} className="more-item" onClick={() => setMore(false)}>
-              <span className="more-ico">{icon}</span>
-              <span className="more-lbl">{label}</span>
+      {/* More bottom sheet */}
+      <div id="more-sheet" className={more ? 'on' : ''}>
+        <div className="sheet-handle"/>
+        <div className="sheet-grid">
+          {MORE.map(([to, label, icon]) => (
+            <NavLink key={to} to={to} className="sheet-item" onClick={() => setMore(false)}>
+              <span className="sheet-ico">{icon}</span>
+              <span className="sheet-lbl">{label}</span>
             </NavLink>
           ))}
-          <button className="more-item" onClick={handleLogout}>
-            <span className="more-ico">🚪</span>
-            <span className="more-lbl" style={{color:'#ff6b6b'}}>Đăng xuất</span>
+          <button className="sheet-item" onClick={doLogout}>
+            <span className="sheet-ico">🚪</span>
+            <span className="sheet-lbl" style={{ color:'#FF6B6B' }}>Đăng xuất</span>
           </button>
         </div>
       </div>

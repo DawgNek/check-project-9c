@@ -1,432 +1,373 @@
-// src/pages/LocketPage.jsx — Fixed camera layout + mobile UX
+// LocketPage.jsx — Completely rebuilt. Camera works. Masonry gallery.
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { getLocket, uploadLocketPhoto, uploadLocketFromCamera, addReaction, updateStreak, getStreak } from '../lib/firestore';
 import toast from 'react-hot-toast';
 
-const REACTIONS   = ['✿','❤','✦','☀','❧'];
-const STREAK_LVLS = [
-  {min:1,icon:'🌱',label:'1 ngày'},{min:3,icon:'🌿',label:'3 ngày'},
-  {min:7,icon:'🌸',label:'7 ngày'},{min:14,icon:'🌺',label:'14 ngày'},
-  {min:30,icon:'🌳',label:'30 ngày'},
-];
-
-/* ── Camera — full-screen fixed, proper layout ────── */
-function LocketCamera({ onCapture, onClose }) {
-  const videoRef  = useRef(null);
-  const canvasRef = useRef(null);
+// ── Camera ────────────────────────────────────────────────
+function Camera({ onCapture, onClose }) {
+  const vidRef    = useRef(null);
+  const canRef    = useRef(null);
   const streamRef = useRef(null);
   const [ready,  setReady]  = useState(false);
   const [facing, setFacing] = useState('user');
   const [flash,  setFlash]  = useState(false);
 
-  const startCam = useCallback(async (fm = facing) => {
+  const start = useCallback(async (fm) => {
     try {
       streamRef.current?.getTracks().forEach(t => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: fm, width:{ ideal:1280 }, height:{ ideal:1280 } },
+        video: { facingMode: fm, width: { ideal: 1280 }, height: { ideal: 1280 } },
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play();
-          setReady(true);
-        };
-      }
-    } catch (err) {
-      toast.error('Không thể mở camera. Kiểm tra quyền truy cập.');
+      const v = vidRef.current;
+      if (v) { v.srcObject = stream; v.onloadedmetadata = () => { v.play().then(() => setReady(true)); }; }
+    } catch {
+      toast.error('Không thể mở camera');
       onClose();
     }
-  }, [facing, onClose]);
+  }, [onClose]);
 
-  useEffect(() => { startCam(); return () => streamRef.current?.getTracks().forEach(t=>t.stop()); }, []);
+  useEffect(() => { start('user'); return () => streamRef.current?.getTracks().forEach(t => t.stop()); }, [start]);
 
-  const flip = () => {
-    const nf = facing === 'user' ? 'environment' : 'user';
-    setFacing(nf); startCam(nf);
-  };
+  const flip = () => { const nf = facing === 'user' ? 'environment' : 'user'; setFacing(nf); start(nf); };
 
-  const capture = () => {
-    const video  = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    const size = Math.min(video.videoWidth, video.videoHeight);
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const ox = (video.videoWidth  - size) / 2;
-    const oy = (video.videoHeight - size) / 2;
-    if (facing === 'user') { ctx.save(); ctx.translate(size,0); ctx.scale(-1,1); }
-    ctx.drawImage(video, ox, oy, size, size, 0, 0, size, size);
+  const shoot = () => {
+    const v = vidRef.current; const c = canRef.current;
+    if (!v || !c || !ready) return;
+    const size = Math.min(v.videoWidth, v.videoHeight);
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    const ox = (v.videoWidth  - size) / 2;
+    const oy = (v.videoHeight - size) / 2;
+    if (facing === 'user') { ctx.save(); ctx.translate(size, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, ox, oy, size, size, 0, 0, size, size);
     if (facing === 'user') ctx.restore();
-    setFlash(true);
-    setTimeout(()=>setFlash(false), 350);
-    canvas.toBlob(blob => { if (blob) onCapture(blob, canvas.toDataURL('image/jpeg',.88)); }, 'image/jpeg', .88);
+    setFlash(true); setTimeout(() => setFlash(false), 300);
+    c.toBlob(blob => blob && onCapture(blob, c.toDataURL('image/jpeg', .88)), 'image/jpeg', .88);
   };
 
   return (
     <div style={{
-      position:'fixed', inset:0, zIndex:800, background:'#111',
-      display:'flex', flexDirection:'column', alignItems:'center',
-      justifyContent:'space-between', paddingBottom:'env(safe-area-inset-bottom,0px)',
+      position:'fixed', inset:0, zIndex:800, background:'#000',
+      display:'flex', flexDirection:'column',
+      paddingBottom:'env(safe-area-inset-bottom,0px)',
     }}>
       {/* Flash */}
-      {flash && (
-        <div style={{ position:'absolute', inset:0, background:'#fff', zIndex:10, animation:'flashOut .35s ease-out forwards', pointerEvents:'none' }}/>
-      )}
+      {flash && <div style={{ position:'absolute',inset:0,zIndex:10,background:'#fff',animation:'flashOut .3s ease-out both',pointerEvents:'none' }}/>}
       <style>{`@keyframes flashOut{from{opacity:1}to{opacity:0}}`}</style>
 
-      {/* Top bar */}
+      {/* Header */}
       <div style={{
         position:'absolute', top:0, left:0, right:0, zIndex:5,
-        padding:'calc(env(safe-area-inset-top,0px) + 14px) 20px 14px',
+        padding:'calc(env(safe-area-inset-top,0px) + 16px) 20px 16px',
         display:'flex', justifyContent:'space-between', alignItems:'center',
-        background:'linear-gradient(to bottom,rgba(0,0,0,.55),transparent)',
+        background:'linear-gradient(to bottom,rgba(0,0,0,.65),transparent)',
       }}>
-        <button onClick={onClose} style={{
-          color:'#fff', background:'rgba(255,255,255,.18)', backdropFilter:'blur(8px)',
-          border:'none', borderRadius:24, padding:'9px 18px', cursor:'pointer',
-          fontFamily:'var(--font-label)', fontSize:'.72rem', letterSpacing:'.08em',
-          display:'flex', alignItems:'center', gap:6,
-        }}>← Đóng</button>
-
-        <div style={{ color:'#fff', fontFamily:'var(--font-display)', fontSize:'1.05rem', fontWeight:600, letterSpacing:'.04em' }}>
-          Locket 📷
-        </div>
-
-        <button onClick={flip} style={{
-          width:42, height:42, borderRadius:'50%',
-          background:'rgba(255,255,255,.18)', backdropFilter:'blur(8px)',
-          border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize:'1.3rem', color:'#fff',
-        }}>🔄</button>
+        <button onClick={onClose} style={{ background:'rgba(255,255,255,.15)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,.25)', borderRadius:24, padding:'9px 18px', color:'#fff', fontFamily:"'Tenor Sans',sans-serif", fontSize:10, letterSpacing:'.18em', textTransform:'uppercase', cursor:'pointer' }}>
+          ← Đóng
+        </button>
+        <div style={{ fontFamily:"'Fraunces',serif", fontWeight:600, fontSize:'1.1rem', color:'#fff', letterSpacing:'-.01em' }}>Locket</div>
+        <button onClick={flip} style={{ width:40, height:40, borderRadius:'50%', background:'rgba(255,255,255,.15)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+          </svg>
+        </button>
       </div>
 
-      {/* Video — fills all available space */}
-      <div style={{ flex:1, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' }}>
-        {/* Circular mask */}
+      {/* Viewfinder */}
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
+        {/* Blurred bg */}
+        <video ref={vidRef} playsInline muted style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', transform: facing==='user'?'scaleX(-1)':'none', opacity:.25, filter:'blur(24px)', pointerEvents:'none' }}/>
+        {/* Circular frame */}
         <div style={{
           position:'relative',
-          width:'min(82vw, 82vh, 380px)',
-          height:'min(82vw, 82vh, 380px)',
-          borderRadius:'50%',
-          overflow:'hidden',
-          border:'4px solid rgba(246,193,204,.65)',
-          boxShadow:'0 0 0 8px rgba(246,193,204,.15), 0 24px 80px rgba(0,0,0,.55)',
-          flexShrink:0,
+          width:'min(82vw,82svh,380px)', height:'min(82vw,82svh,380px)',
+          borderRadius:'50%', overflow:'hidden', flexShrink:0,
+          border:'3px solid rgba(212,37,110,0.55)',
+          boxShadow:'0 0 0 8px rgba(212,37,110,0.12), 0 24px 80px rgba(0,0,0,0.70)',
         }}>
-          <video ref={videoRef} autoPlay playsInline muted
-            style={{ width:'100%', height:'100%', objectFit:'cover',
-              transform: facing==='user' ? 'scaleX(-1)' : 'none' }}
-          />
+          <video ref={vidRef} playsInline muted style={{ width:'100%', height:'100%', objectFit:'cover', transform: facing==='user'?'scaleX(-1)':'none' }}/>
           {!ready && (
-            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
-              background:'rgba(0,0,0,.4)', color:'rgba(255,255,255,.7)',
-              fontFamily:'var(--font-body)', fontSize:'.9rem', fontStyle:'italic', textAlign:'center', padding:16 }}>
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,.55)', color:'rgba(255,255,255,.6)', fontFamily:"'Lora',serif", fontStyle:'italic', fontSize:15, textAlign:'center', padding:20 }}>
               Đang khởi động camera...
             </div>
           )}
         </div>
-        {/* Full-screen blurred background for non-circle area */}
-        <video ref={videoRef} autoPlay playsInline muted
-          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
-            transform: facing==='user' ? 'scaleX(-1)' : 'none',
-            opacity:.25, filter:'blur(20px)', zIndex:-1 }}
-        />
       </div>
+      <canvas ref={canRef} style={{ display:'none' }}/>
 
-      <canvas ref={canvasRef} style={{ display:'none' }}/>
-
-      {/* Bottom controls */}
-      <div style={{
-        width:'100%', padding:'20px 32px 24px',
-        display:'flex', alignItems:'center', justifyContent:'center',
-        background:'linear-gradient(to top,rgba(0,0,0,.6),transparent)',
-        gap:40,
-      }}>
-        {/* Gallery shortcut */}
-        <label style={{ width:48, height:48, borderRadius:14, overflow:'hidden',
-          background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.3)',
-          cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem' }}>
-          <input type="file" accept="image/*" style={{ display:'none' }}
-            onChange={e => {
-              const f = e.target.files[0]; if (!f) return;
-              const r = new FileReader();
-              r.onload = ev => onCapture(f, ev.target.result);
-              r.readAsDataURL(f);
-            }}/>
-          🖼️
+      {/* Controls */}
+      <div style={{ padding:'20px 0 24px', display:'flex', alignItems:'center', justifyContent:'center', gap:40, background:'linear-gradient(to top,rgba(0,0,0,.65),transparent)', flexShrink:0 }}>
+        {/* Gallery */}
+        <label style={{ width:50, height:50, borderRadius:14, background:'rgba(255,255,255,.18)', border:'1.5px solid rgba(255,255,255,.30)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'1.4rem' }}>
+          <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => {
+            const f = e.target.files[0]; if (!f) return;
+            const r = new FileReader(); r.onload = ev => onCapture(f, ev.target.result); r.readAsDataURL(f);
+          }}/>🖼️
         </label>
-
         {/* Shutter */}
-        <button onClick={capture} disabled={!ready}
-          style={{
-            width:80, height:80, borderRadius:'50%',
-            background:'#fff', border:'6px solid rgba(246,193,204,.8)',
-            cursor: ready ? 'pointer' : 'default',
-            boxShadow:'0 0 0 10px rgba(255,255,255,.18), 0 8px 32px rgba(0,0,0,.4)',
-            transition:'transform .15s, box-shadow .15s', flexShrink:0,
-            opacity: ready ? 1 : .55,
-          }}
-          onMouseDown={e=>{ e.currentTarget.style.transform='scale(.9)'; }}
-          onMouseUp={e=>{ e.currentTarget.style.transform='scale(1)'; }}
-          onTouchStart={e=>{ e.currentTarget.style.transform='scale(.88)'; }}
-          onTouchEnd={e=>{ e.currentTarget.style.transform='scale(1)'; }}
-        />
-
-        {/* Spacer */}
-        <div style={{ width:48, height:48 }}/>
+        <button onClick={shoot} disabled={!ready} style={{
+          width:80, height:80, borderRadius:'50%',
+          background: ready ? '#fff' : 'rgba(255,255,255,.4)',
+          border:'5px solid rgba(212,37,110,0.65)',
+          cursor: ready ? 'pointer' : 'default',
+          boxShadow:'0 0 0 10px rgba(255,255,255,.12), 0 8px 32px rgba(0,0,0,.55)',
+          transition:'transform .15s',
+          flexShrink: 0,
+        }}
+          onPointerDown={e => e.currentTarget.style.transform='scale(.90)'}
+          onPointerUp={e   => e.currentTarget.style.transform='scale(1)'}/>
+        <div style={{ width:50 }}/>
       </div>
-
-      <div style={{ color:'rgba(255,255,255,.5)', fontFamily:'var(--font-body)', fontSize:'.8rem',
-        fontStyle:'italic', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 8px)', textAlign:'center' }}>
-        Nhấn vòng tròn để chụp
+      <div style={{ textAlign:'center', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 8px)', fontFamily:"'Lora',serif", fontStyle:'italic', fontSize:12, color:'rgba(255,255,255,.45)' }}>
+        Chạm vòng tròn để chụp
       </div>
     </div>
   );
 }
 
-/* ── Capture preview ─────────────────────────────── */
-function CapturePreview({ preview, onPost, onRetake, uploading }) {
+// ── Preview confirm ───────────────────────────────────────
+function Preview({ src, onPost, onRetake, busy }) {
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:800, background:'#111',
-      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:28, padding:32 }}>
-      {/* Circular preview */}
-      <div style={{
-        width:'min(80vw,360px)', height:'min(80vw,360px)',
-        borderRadius:'50%', overflow:'hidden',
-        border:'5px solid rgba(246,193,204,.7)',
-        boxShadow:'0 0 0 10px rgba(246,193,204,.12), 0 24px 80px rgba(0,0,0,.55)',
-      }}>
-        <img src={preview} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+    <div style={{ position:'fixed',inset:0,zIndex:800,background:'#0A0508', display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,padding:32 }}>
+      <div style={{ width:'min(80vw,360px)',height:'min(80vw,360px)',borderRadius:'50%',overflow:'hidden', border:'3px solid rgba(212,37,110,.55)', boxShadow:'0 0 0 10px rgba(212,37,110,.10),0 24px 80px rgba(0,0,0,.70)' }}>
+        <img src={src} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
       </div>
-      <div style={{ fontFamily:'var(--font-heading)', fontSize:'.95rem', fontStyle:'italic',
-        color:'rgba(255,255,255,.65)', textAlign:'center' }}>
-        Nhìn đẹp đấy! Đăng ngay không? ✿
-      </div>
-      <div style={{ display:'flex', gap:16 }}>
-        <button onClick={onRetake} style={{
-          padding:'12px 28px', borderRadius:50,
-          border:'1.5px solid rgba(255,255,255,.35)', background:'rgba(255,255,255,.1)',
-          color:'#fff', fontFamily:'var(--font-label)', fontSize:'.74rem',
-          letterSpacing:'.1em', textTransform:'uppercase', cursor:'pointer',
-          backdropFilter:'blur(8px)',
-        }}>Chụp lại</button>
-        <button onClick={onPost} disabled={uploading} style={{
-          padding:'12px 32px', borderRadius:50,
-          background:'linear-gradient(135deg,var(--pink-deep),var(--rose-soft))',
-          border:'none', color:'#fff', fontFamily:'var(--font-label)',
-          fontSize:'.74rem', letterSpacing:'.1em', textTransform:'uppercase',
-          cursor:'pointer', boxShadow:'0 8px 28px rgba(216,96,122,.45)',
-        }}>
-          {uploading ? '⏳...' : 'Đăng lên ✿'}
+      <p style={{ fontFamily:"'Lora',serif",fontStyle:'italic',color:'rgba(255,255,255,.60)',fontSize:15,textAlign:'center' }}>
+        Trông tuyệt đấy! Đăng ngay nhé? ✿
+      </p>
+      <div style={{ display:'flex',gap:16 }}>
+        <button onClick={onRetake} className="btn btn-ghost" style={{ padding:'12px 28px' }}>Chụp lại</button>
+        <button onClick={onPost} disabled={busy} className="btn btn-primary" style={{ padding:'12px 32px' }}>
+          {busy ? '⏳' : 'Đăng lên ✿'}
         </button>
       </div>
     </div>
   );
 }
 
-/* ── Polaroid card ──────────────────────────────── */
-function Polaroid({ photo, onClick }) {
-  const rot = ((photo.id?.charCodeAt(0)||0) % 7 - 3) * .6;
+// ── Photo card (polaroid with tape) ──────────────────────
+function PhotoCard({ p, onClick }) {
+  const rot = ((p.id?.charCodeAt(0) || 0) % 9 - 4) * 0.55;
+  const total = Object.values(p.reactions || {}).reduce((a,b)=>a+b, 0);
   return (
     <div onClick={onClick} style={{
-      background:'#fffcf7', border:'1px solid var(--aged)', borderRadius:3,
-      padding:'8px 8px 36px',
-      boxShadow:`var(--shadow-sm), 1px 1px 0 var(--aged)`,
-      cursor:'pointer', transform:`rotate(${rot}deg)`, transition:'all .35s', position:'relative',
+      background:'#F5F0EC', borderRadius:3, padding:'8px 8px 40px',
+      cursor:'pointer', position:'relative',
+      transform:`rotate(${rot}deg)`,
+      boxShadow:`0 4px 20px rgba(0,0,0,.32), 1px 1px 0 rgba(0,0,0,.08)`,
+      transition:'transform .35s cubic-bezier(.25,.46,.45,.94), box-shadow .35s',
+      willChange:'transform',
     }}
-      onMouseEnter={e=>{ e.currentTarget.style.transform='rotate(0) translateY(-8px) scale(1.03)'; e.currentTarget.style.zIndex=5; e.currentTarget.style.boxShadow='var(--shadow-md), 1px 1px 0 var(--aged)'; }}
-      onMouseLeave={e=>{ e.currentTarget.style.transform=`rotate(${rot}deg)`; e.currentTarget.style.zIndex=1; e.currentTarget.style.boxShadow='var(--shadow-sm), 1px 1px 0 var(--aged)'; }}
-    >
-      <img src={photo.imageUrl} alt="" loading="lazy"
-        style={{ width:'100%', aspectRatio:'1', objectFit:'cover', display:'block', filter:'sepia(.06) contrast(1.02)' }}/>
-      <div style={{ position:'absolute', bottom:6, left:8, right:8, display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-        <span style={{ fontFamily:'var(--font-heading)', fontSize:'.72rem', color:'var(--ink-muted)', fontStyle:'italic',
-          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'70%' }}>
-          {photo.userName?.split(' ').slice(-1)[0]}
+      onMouseEnter={e => { e.currentTarget.style.transform='rotate(0deg) translateY(-10px) scale(1.03)'; e.currentTarget.style.boxShadow='0 16px 48px rgba(0,0,0,.45), 1px 1px 0 rgba(0,0,0,.10)'; e.currentTarget.style.zIndex=10; }}
+      onMouseLeave={e => { e.currentTarget.style.transform=`rotate(${rot}deg)`; e.currentTarget.style.boxShadow='0 4px 20px rgba(0,0,0,.32), 1px 1px 0 rgba(0,0,0,.08)'; e.currentTarget.style.zIndex=1; }}>
+      <img src={p.imageUrl} alt="" loading="lazy"
+        style={{ width:'100%', aspectRatio:'1', objectFit:'cover', display:'block', filter:'sepia(.06) contrast(1.04)' }}/>
+      {/* Caption strip */}
+      <div style={{ position:'absolute',bottom:0,left:0,right:0,padding:'6px 10px 10px', display:'flex',justifyContent:'space-between',alignItems:'flex-end' }}>
+        <span style={{ fontFamily:"'Lora',serif",fontStyle:'italic',fontSize:11.5,color:'#5A3040', overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'68%' }}>
+          {p.userName?.split(' ').slice(-1)[0]}
         </span>
-        {Object.values(photo.reactions||{}).some(v=>v>0) && (
-          <span style={{ fontSize:'.65rem', color:'var(--rose-soft)' }}>
-            {Object.entries(photo.reactions||{}).filter(([,v])=>v>0).slice(0,2).map(([e,c])=>`${e}${c}`).join(' ')}
+        {total > 0 && (
+          <span style={{ fontSize:11,color:'#C4185A' }}>
+            {Object.entries(p.reactions||{}).filter(([,v])=>v>0).slice(0,2).map(([e,c])=>`${e}${c}`).join(' ')}
           </span>
         )}
       </div>
-      {/* Tape */}
-      <div style={{ position:'absolute', top:-8, left:'22%', width:28, height:13, background:'rgba(232,200,120,.5)', borderRadius:2, transform:'rotate(-3deg)' }}/>
-      <div style={{ position:'absolute', top:-8, right:'22%', width:24, height:13, background:'rgba(207,232,213,.6)', borderRadius:2, transform:'rotate(4deg)' }}/>
+      {/* Tape strips */}
+      <div style={{ position:'absolute',top:-9,left:'20%',width:32,height:14,background:'rgba(212,37,110,.30)',borderRadius:2,transform:'rotate(-3deg)' }}/>
+      <div style={{ position:'absolute',top:-9,right:'20%',width:26,height:14,background:'rgba(46,85,48,.28)',borderRadius:2,transform:'rotate(4deg)' }}/>
     </div>
   );
 }
 
-/* ── Reaction modal ──────────────────────────────── */
-function ReactModal({ photo, onClose, onReact }) {
-  if (!photo) return null;
+// ── Reaction modal ────────────────────────────────────────
+const EMOJIS = ['✿','❤️','🔥','😍','✦','☀'];
+function ReactModal({ p, onClose, onReact }) {
+  if (!p) return null;
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:700, background:'rgba(45,24,34,.6)',
-      backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
-      onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="card" style={{ maxWidth:420, width:'100%', padding:24, animation:'bloom .3s ease-out' }}>
-        <style>{`@keyframes bloom{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:scale(1)}}`}</style>
-        <button onClick={onClose} style={{ float:'right', width:28, height:28, borderRadius:'50%',
-          border:'1px solid var(--border)', background:'transparent', color:'var(--ink-faint)', cursor:'pointer', fontSize:13 }}>✕</button>
-        <div style={{ padding:'0 6px 6px', background:'#faf6ef', border:'1px solid var(--aged)', borderRadius:3, marginBottom:16 }}>
-          <img src={photo.imageUrl} alt="" style={{ width:'100%', borderRadius:2, filter:'sepia(.05)' }}/>
+    <div className="modal-bg" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="glass modal" style={{ maxWidth:420, padding:0, overflow:'hidden' }}>
+        <div style={{ padding:'8px 8px 0', background:'rgba(255,255,255,.04)' }}>
+          <img src={p.imageUrl} alt="" style={{ width:'100%',borderRadius:'var(--r-lg) var(--r-lg) 0 0',filter:'sepia(.05)' }}/>
         </div>
-        <div style={{ fontFamily:'var(--font-heading)', fontSize:'.92rem', fontWeight:600, color:'var(--rose-soft)', marginBottom:14 }}>
-          {photo.userName} · {photo.dateStr}
-        </div>
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-          {REACTIONS.map(r=>(
-            <button key={r} className="btn btn-glass" style={{ padding:'10px 16px', fontSize:'1.2rem' }}
-              onClick={()=>{ onReact(r); onClose(); }}>
-              {r}{photo.reactions?.[r]>0 ? <sup style={{ fontSize:'.75rem' }}>{photo.reactions[r]}</sup> : null}
-            </button>
-          ))}
+        <div style={{ padding:'18px 22px 22px' }}>
+          <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16 }}>
+            <div>
+              <div style={{ fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:'1rem',color:'var(--t0)' }}>{p.userName}</div>
+              <div style={{ fontFamily:"'Tenor Sans',sans-serif",fontSize:10,letterSpacing:'.12em',textTransform:'uppercase',color:'var(--t3)' }}>{p.dateStr}</div>
+            </div>
+            <button onClick={onClose} className="btn-icon" style={{ width:32,height:32,fontSize:14 }}>✕</button>
+          </div>
+          <div style={{ display:'flex',gap:8,flexWrap:'wrap' }}>
+            {EMOJIS.map(e => (
+              <button key={e} onClick={() => { onReact(e); onClose(); }}
+                style={{ padding:'9px 16px',borderRadius:50,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.16)',color:'var(--t0)',fontSize:16,cursor:'pointer',transition:'all .2s' }}
+                onMouseEnter={el => el.currentTarget.style.background='rgba(212,37,110,.20)'}
+                onMouseLeave={el => el.currentTarget.style.background='rgba(255,255,255,.08)'}>
+                {e}{p.reactions?.[e]>0 ? <sup style={{fontSize:10,marginLeft:3}}>{p.reactions[e]}</sup> : null}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── Main LocketPage ─────────────────────────────── */
+// ── Streak indicator ──────────────────────────────────────
+const STREAK_STAGES = [
+  {min:1,  icon:'🌱', label:'1 ngày'},
+  {min:3,  icon:'🌿', label:'3 ngày'},
+  {min:7,  icon:'🌸', label:'7 ngày'},
+  {min:14, icon:'🌺', label:'14 ngày'},
+  {min:30, icon:'🌳', label:'30 ngày'},
+];
+
+// ── Main page ─────────────────────────────────────────────
 export default function LocketPage() {
   const { user } = useAuth();
-  const [photos,     setPhotos]     = useState([]);
-  const [streak,     setStreak]     = useState(0);
-  const [selected,   setSelected]   = useState(null);
-  const [uploading,  setUploading]  = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
-  const [capBlob,    setCapBlob]    = useState(null);
-  const [capPrev,    setCapPrev]    = useState(null);
+  const [photos,    setPhotos]    = useState([]);
+  const [streak,    setStreak]    = useState(0);
+  const [selected,  setSelected]  = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [showCam,   setShowCam]   = useState(false);
+  const [capBlob,   setCapBlob]   = useState(null);
+  const [capPrev,   setCapPrev]   = useState(null);
 
   useEffect(() => {
     let unsub;
     try { unsub = getLocket(setPhotos); } catch {}
-    getStreak(user.uid).then(setStreak).catch(()=>{});
+    getStreak(user.uid).then(setStreak).catch(() => {});
     return () => unsub?.();
   }, [user.uid]);
 
-  const handleUploadFile = async e => {
+  const doUpload = async e => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     setUploading(true);
     try {
-      for (const f of files) await uploadLocketPhoto(user.uid, user.displayName||'Ẩn danh', f);
+      for (const f of files) await uploadLocketPhoto(user.uid, user.displayName || 'Ẩn danh', f);
       const s = await updateStreak(user.uid); setStreak(s);
-      toast.success(`Upload xong ✿ Streak: ${s} ngày`);
-    } catch { toast.error('Upload thất bại. Cần cấu hình Firebase.'); }
-    finally { setUploading(false); e.target.value=''; }
+      toast.success(`Upload xong ✿  Streak: ${s} ngày`);
+    } catch { toast.error('Cần cấu hình Firebase để upload'); }
+    finally { setUploading(false); e.target.value = ''; }
   };
 
-  const handleCapture = (blobOrFile, preview) => {
-    if (blobOrFile instanceof Blob) setCapBlob(blobOrFile);
-    else setCapBlob(blobOrFile); // File also works
-    setCapPrev(preview); setShowCamera(false);
+  const onCapture = (blobOrFile, preview) => {
+    setCapBlob(blobOrFile); setCapPrev(preview); setShowCam(false);
   };
-
   const postCapture = async () => {
     if (!capBlob) return;
     setUploading(true);
     try {
-      await uploadLocketFromCamera(user.uid, user.displayName||'Ẩn danh', capBlob);
+      await uploadLocketFromCamera(user.uid, user.displayName || 'Ẩn danh', capBlob);
       const s = await updateStreak(user.uid); setStreak(s);
-      toast.success(`Locket đã đăng ✿ Streak: ${s} ngày`);
+      toast.success(`Locket đã đăng ✿  Streak: ${s} ngày`);
       setCapBlob(null); setCapPrev(null);
-    } catch { toast.error('Đăng thất bại. Cần cấu hình Firebase.'); }
+    } catch { toast.error('Cần cấu hình Firebase'); }
     finally { setUploading(false); }
   };
 
-  const handleReact = async emoji => {
-    if (selected) {
-      try { await addReaction(selected.id, emoji); }
-      catch { toast.error('Cần cấu hình Firebase'); }
-    }
+  const doReact = async emoji => {
+    if (selected) try { await addReaction(selected.id, emoji); } catch {}
   };
 
-  const grouped = photos.reduce((acc,p)=>{ const k=p.dateStr||'—'; if(!acc[k])acc[k]=[]; acc[k].push(p); return acc; },{});
+  // Group by date
+  const grouped = photos.reduce((acc, p) => {
+    const k = p.dateStr || '—';
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(p);
+    return acc;
+  }, {});
 
-  // Camera screens
-  if (showCamera) return <LocketCamera onCapture={handleCapture} onClose={()=>setShowCamera(false)}/>;
-  if (capPrev)    return <CapturePreview preview={capPrev} onPost={postCapture}
-    onRetake={()=>{ setCapBlob(null); setCapPrev(null); setShowCamera(true); }} uploading={uploading}/>;
+  // Camera & preview fullscreen views
+  if (showCam)  return <Camera onCapture={onCapture} onClose={() => setShowCam(false)}/>;
+  if (capPrev)  return <Preview src={capPrev} onPost={postCapture}
+    onRetake={() => { setCapBlob(null); setCapPrev(null); setShowCam(true); }} busy={uploading}/>;
 
   return (
     <div className="wrap">
-      {/* ── Header + action bar ─────────────────────── */}
-      <div className="section-header" style={{ paddingBottom:8 }}>
-        <span className="section-eyebrow">✦ Locket lớp 9C ✦</span>
-        <h1 className="section-title">Locket</h1>
-        <p className="section-subtitle">Ghi lại mọi khoảnh khắc — upload không giới hạn</p>
+      {/* Header */}
+      <div className="page-hero" style={{ paddingBottom:8 }}>
+        <span className="eyebrow">✦ Locket lớp 9C ✦</span>
+        <h1 className="title-lg" style={{ marginBottom:10 }}>Locket</h1>
+        <p className="body-italic" style={{ maxWidth:400, margin:'0 auto' }}>
+          Ghi lại mọi khoảnh khắc — upload không giới hạn
+        </p>
       </div>
 
       <div className="inner">
         {/* Action bar */}
-        <div className="glass-card" style={{
-          padding:'18px 22px', display:'flex', alignItems:'center',
-          justifyContent:'space-between', flexWrap:'wrap', gap:14, marginBottom:28,
-        }}>
-          {/* Streak display */}
+        <div className="glass" style={{ padding:'18px 22px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:14, marginBottom:28 }}>
+          {/* Streak */}
           <div>
-            <div className="field-label" style={{ marginBottom:8 }}>Upload streak</div>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              {STREAK_LVLS.map(lv=>(
-                <span key={lv.icon} title={lv.label}
-                  style={{ fontSize:'1.25rem', opacity:streak>=lv.min?1:.22,
-                    filter:streak>=lv.min?'none':'grayscale(1)', transition:'all .4s' }}>
-                  {lv.icon}
-                </span>
+            <div className="label" style={{ marginBottom:9 }}>Upload streak</div>
+            <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+              {STREAK_STAGES.map(s => (
+                <span key={s.icon} title={s.label} style={{
+                  fontSize:'1.3rem', lineHeight:1,
+                  opacity: streak >= s.min ? 1 : 0.20,
+                  filter: streak >= s.min ? 'none' : 'grayscale(1)',
+                  transition:'all .4s',
+                }}>{s.icon}</span>
               ))}
-              <span style={{ fontFamily:'var(--font-heading)', fontSize:'.98rem', color:'var(--rose-soft)', fontStyle:'italic', marginLeft:4 }}>
-                {streak} ngày
-              </span>
+              {streak > 0 && (
+                <span style={{ fontFamily:"'Fraunces',serif", fontStyle:'italic', fontSize:'0.95rem', color:'var(--f-light)', marginLeft:6 }}>
+                  {streak} ngày
+                </span>
+              )}
             </div>
           </div>
           {/* Buttons */}
           <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-            <button className="btn btn-pink" onClick={()=>setShowCamera(true)} style={{ padding:'12px 22px', fontSize:'.78rem', gap:6 }}>
+            <button className="btn btn-primary" onClick={() => setShowCam(true)}>
               📷 Chụp ảnh
             </button>
             <label style={{ cursor:'pointer' }}>
-              <input type="file" accept="image/*" multiple style={{ display:'none' }} onChange={handleUploadFile} disabled={uploading}/>
-              <div className="btn btn-glass" style={{ padding:'11px 20px', pointerEvents:'none', whiteSpace:'nowrap', fontSize:'.76rem' }}>
-                {uploading ? '⏳ Đang upload...' : '📁 Thư viện'}
-              </div>
+              <input type="file" accept="image/*" multiple style={{ display:'none' }} onChange={doUpload} disabled={uploading}/>
+              <span className="btn btn-ghost" style={{ pointerEvents:'none' }}>
+                {uploading ? '⏳ Đang tải...' : '🖼 Thư viện'}
+              </span>
             </label>
           </div>
         </div>
 
-        {/* Empty state */}
+        {/* Empty */}
         {photos.length === 0 && (
-          <div style={{ textAlign:'center', padding:'60px 20px' }}>
-            <div style={{ fontSize:'3rem', marginBottom:16, opacity:.4 }}>📷</div>
-            <div style={{ fontFamily:'var(--font-display)', fontSize:'1.2rem', color:'var(--ink-muted)', marginBottom:8 }}>Chưa có ảnh nào</div>
-            <div style={{ fontFamily:'var(--font-body)', fontSize:'.9rem', fontStyle:'italic', color:'var(--ink-faint)', marginBottom:28 }}>
-              Nhấn "Chụp ảnh" để bắt đầu ghi lại kỷ niệm
-            </div>
-            <button className="btn btn-pink" onClick={()=>setShowCamera(true)}>📷 Mở camera ngay</button>
+          <div style={{ textAlign:'center', padding:'72px 0' }}>
+            <div style={{ fontSize:'3.5rem', marginBottom:18, opacity:.4 }}>📷</div>
+            <h3 className="title-md" style={{ marginBottom:10, opacity:.75 }}>Chưa có ảnh nào</h3>
+            <p className="body-italic" style={{ marginBottom:28 }}>Bắt đầu ghi lại kỷ niệm từ hôm nay</p>
+            <button className="btn btn-primary" onClick={() => setShowCam(true)}>📷 Mở camera ngay</button>
           </div>
         )}
 
-        {/* Photos grouped by date — polaroid style */}
-        {Object.entries(grouped).map(([date,items])=>(
-          <div key={date} style={{ marginBottom:48 }}>
-            {/* Day header */}
-            <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:26 }}>
-              <div style={{ fontFamily:'var(--font-label)', fontSize:'.64rem', letterSpacing:'.18em', textTransform:'uppercase', color:'var(--rose-soft)' }}>{date}</div>
-              <div style={{ flex:1, height:1, background:'linear-gradient(90deg,var(--border),transparent)' }}/>
-              <div style={{ fontFamily:'var(--font-heading)', fontSize:'.8rem', fontStyle:'italic', color:'var(--ink-faint)' }}>{items.length} ảnh</div>
+        {/* Photo groups */}
+        {Object.entries(grouped).map(([date, items]) => (
+          <div key={date} style={{ marginBottom:52 }}>
+            {/* Date header */}
+            <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:28 }}>
+              <span className="eyebrow" style={{ marginBottom:0 }}>{date}</span>
+              <div style={{ flex:1, height:1, background:'linear-gradient(90deg,rgba(212,37,110,.25),transparent)' }}/>
+              <span style={{ fontFamily:"'Lora',serif", fontStyle:'italic', fontSize:13, color:'var(--t3)' }}>{items.length} ảnh</span>
             </div>
-            {/* Grid */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:24, padding:'8px 4px 16px' }}>
-              {items.map(p => <Polaroid key={p.id} photo={p} onClick={()=>setSelected(p)}/>)}
+            {/* Polaroid grid */}
+            <div style={{
+              display:'grid',
+              gridTemplateColumns:'repeat(auto-fill, minmax(145px, 1fr))',
+              gap:28,
+              padding:'10px 6px 16px',
+            }}>
+              {items.map(p => <PhotoCard key={p.id} p={p} onClick={() => setSelected(p)}/>)}
             </div>
           </div>
         ))}
       </div>
 
-      <ReactModal photo={selected} onClose={()=>setSelected(null)} onReact={handleReact}/>
+      <ReactModal p={selected} onClose={() => setSelected(null)} onReact={doReact}/>
     </div>
   );
 }
